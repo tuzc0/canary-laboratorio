@@ -55,17 +55,41 @@ jobs:
           grep -q '"version":"v1"' /tmp/distribution.txt
           grep -q '"version":"v2"' /tmp/distribution.txt
 
-      - name: Promote and rollback
+            - name: Promote and rollback
         run: |
+          wait_for_version() {
+            local expected="$1"
+            local consecutive=0
+            local response
+
+            for attempt in $(seq 1 30); do
+              if response=$(curl -fsS --connect-timeout 2 --max-time 3 \
+                http://127.0.0.1:8080/api/info); then
+                echo "Attempt ${attempt}: ${response}"
+
+                if grep -Fq "\"version\":\"${expected}\"" <<< "$response"; then
+                  consecutive=$((consecutive + 1))
+                else
+                  consecutive=0
+                fi
+              else
+                consecutive=0
+              fi
+
+              if [ "$consecutive" -ge 5 ]; then
+                echo "Verified five consecutive responses from ${expected}"
+                return 0
+              fi
+
+              sleep 1
+            done
+
+            echo "Version ${expected} did not stabilize within 30 attempts" >&2
+            return 1
+          }
+
           ./scripts/promote.sh green
-          curl -fsS http://127.0.0.1:8080/api/info | grep -q '"version":"v2"'
+          wait_for_version v2
+
           ./scripts/promote.sh blue
-          curl -fsS http://127.0.0.1:8080/api/info | grep -q '"version":"v1"'
-
-      - name: Logs on failure
-        if: failure()
-        run: docker compose logs
-
-      - name: Tear down
-        if: always()
-        run: docker compose down -v
+          wait_for_version v1
