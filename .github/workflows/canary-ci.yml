@@ -55,7 +55,7 @@ jobs:
           grep -q '"version":"v1"' /tmp/distribution.txt
           grep -q '"version":"v2"' /tmp/distribution.txt
 
-            - name: Promote and rollback
+      - name: Promote and rollback
         run: |
           wait_for_version() {
             local expected="$1"
@@ -93,3 +93,11 @@ jobs:
 
           ./scripts/promote.sh blue
           wait_for_version v1
+	
+      - name: Logs on failure
+        if: failure()
+        run: docker compose logs
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v
