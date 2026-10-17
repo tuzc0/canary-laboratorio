@@ -1,43 +1,71 @@
 name: Canary lab CI
+
 on:
   push:
   pull_request:
   workflow_dispatch:
+
+permissions:
+  contents: read
+
 jobs:
   test-and-canary:
     runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        shell: bash
+        working-directory: demo_canary/canary_lab
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
           node-version: '22'
+
+      - name: Prepare laboratory
+        run: |
+          cp .env.example .env
+          chmod +x scripts/*.sh
+
       - name: Unit tests
         run: node --test test/*.test.js
+
       - name: Start two releases and proxy
         run: docker compose up -d --build
+
       - name: Wait for HTTP readiness
         run: |
           for i in $(seq 1 30); do
-            if curl -fsS http://127.0.0.1:8080/health; then exit 0; fi
+            if curl -fsS http://127.0.0.1:8080/health; then
+              exit 0
+            fi
             sleep 2
           done
           docker compose logs
           exit 1
+
       - name: Validate canary routing
         run: |
           ./scripts/promote.sh canary10
           ./scripts/sample.sh 100 | tee /tmp/distribution.txt
           grep -q '"version":"v1"' /tmp/distribution.txt
           grep -q '"version":"v2"' /tmp/distribution.txt
+
       - name: Promote and rollback
         run: |
           ./scripts/promote.sh green
           curl -fsS http://127.0.0.1:8080/api/info | grep -q '"version":"v2"'
           ./scripts/promote.sh blue
           curl -fsS http://127.0.0.1:8080/api/info | grep -q '"version":"v1"'
+
       - name: Logs on failure
         if: failure()
         run: docker compose logs
+
       - name: Tear down
         if: always()
         run: docker compose down -v
