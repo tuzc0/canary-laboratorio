@@ -93,7 +93,7 @@ jobs:
 
           ./scripts/promote.sh blue
           wait_for_version v1
-	
+  
       - name: Logs on failure
         if: failure()
         run: docker compose logs
